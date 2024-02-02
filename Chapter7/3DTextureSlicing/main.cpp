@@ -28,23 +28,27 @@ const float EPSILON = 0.0001f;
 using namespace std;
 
 //screen dimensions
-const int WIDTH  = 1280;
+const int WIDTH = 1280;
 const int HEIGHT = 960;
 
 //camera transform variables
-int state = 0, oldX=0, oldY=0;
-float rX=4, rY=50, dist = -2;
+int state = 0, oldX = 0, oldY = 0;
+float rX = 4, rY = 50, dist = -2;
 
 //grid object
 #include "..\src\Grid.h"
 CGrid* grid;
 
 //modelview and projection matrices
-glm::mat4 MV,P;
+glm::mat4 MV, P;
 
 //volume vertex array and buffer objects
 GLuint volumeVBO;
 GLuint volumeVAO;
+
+GLuint cubeEBO;
+GLuint cubeVBO;
+GLuint cubeVAO;
 
 //3D texture slicing shader
 GLSLShader shader;
@@ -53,10 +57,11 @@ GLSLShader shader;
 const int MAX_SLICES = 512;
 
 //sliced vertices
-glm::vec3 vTextureSlices[MAX_SLICES*12];
+//glm::vec3 vTextureSlices[MAX_SLICES * 12];
+glm::vec3 vTextureSlices[12];
 
 //background colour
-glm::vec4 bg=glm::vec4(0.5,0.5,1,1);
+glm::vec4 bg = glm::vec4(0.8, 0.8, 0.8, 1);
 
 //volume data files
 const std::string volume_file = "../media/Engine256.raw";
@@ -68,6 +73,7 @@ const int ZDIM = 256;
 
 //total number of slices current used
 int num_slices = 256;
+//int num_slices = 8;
 
 //OpenGL volume texture id
 GLuint textureID;
@@ -78,13 +84,15 @@ bool bViewRotated = false;
 
 //unit cube vertices
 glm::vec3 vertexList[8] = {glm::vec3(-0.5,-0.5,-0.5),
-						   glm::vec3( 0.5,-0.5,-0.5),
+						   glm::vec3(0.5,-0.5,-0.5),
 						   glm::vec3(0.5, 0.5,-0.5),
 						   glm::vec3(-0.5, 0.5,-0.5),
 						   glm::vec3(-0.5,-0.5, 0.5),
 						   glm::vec3(0.5,-0.5, 0.5),
-						   glm::vec3( 0.5, 0.5, 0.5),
+						   glm::vec3(0.5, 0.5, 0.5),
 						   glm::vec3(-0.5, 0.5, 0.5)};
+
+const int edges[12][2] = {{0,1},{1,2},{2,3},{3,0},{0,4},{1,5},{2,6},{3,7},{4,5},{5,6},{6,7},{7,4}};
 
 //unit cube edges
 int edgeList[8][12] = {
@@ -97,7 +105,7 @@ int edgeList[8][12] = {
 	{ 9,8,5,4,   6,1,2,0,   10,7,11,3}, // v6 is front
 	{ 10,9,6,5,  7,2,3,1,   11,4,8,0 }  // v7 is front
 };
-const int edges[12][2]= {{0,1},{1,2},{2,3},{3,0},{0,4},{1,5},{2,6},{3,7},{4,5},{5,6},{6,7},{7,4}};
+
 
 //current viewing direction
 glm::vec3 viewDir;
@@ -105,13 +113,15 @@ glm::vec3 viewDir;
 
 //function that load a volume from the given raw data file and 
 //generates an OpenGL 3D texture from it
-bool LoadVolume() {
+bool LoadVolume()
+{
 	std::ifstream infile(volume_file.c_str(), std::ios_base::binary);
 
-	if(infile.good()) {
+	if(infile.good())
+	{
 		//read the volume data file
-		GLubyte* pData = new GLubyte[XDIM*YDIM*ZDIM];
-		infile.read(reinterpret_cast<char*>(pData), XDIM*YDIM*ZDIM*sizeof(GLubyte));
+		GLubyte* pData = new GLubyte[XDIM * YDIM * ZDIM];
+		infile.read(reinterpret_cast<char*>(pData), XDIM * YDIM * ZDIM * sizeof(GLubyte));
 		infile.close();
 
 		//generate OpenGL texture
@@ -131,16 +141,18 @@ bool LoadVolume() {
 
 		//allocate data with internal format and foramt as (GL_RED)		
 		//glTexImage3D(GL_TEXTURE_3D,0,GL_LUMINANCE,XDIM,YDIM,ZDIM,0,GL_LUMINANCE,GL_UNSIGNED_BYTE,pData);
-		glTexImage3D(GL_TEXTURE_3D,0,GL_R8,XDIM,YDIM,ZDIM,0,GL_RED,GL_UNSIGNED_BYTE,pData);
+		glTexImage3D(GL_TEXTURE_3D, 0, GL_R8, XDIM, YDIM, ZDIM, 0, GL_RED, GL_UNSIGNED_BYTE, pData);
 		GL_CHECK_ERRORS
 
-		//generate mipmaps
-		glGenerateMipmap(GL_TEXTURE_3D);
+			//generate mipmaps
+			glGenerateMipmap(GL_TEXTURE_3D);
 
 		//delete the volume data allocated on heap
-		delete [] pData;
+		delete[] pData;
 		return true;
-	} else {
+	}
+	else
+	{
 		return false;
 	}
 }
@@ -148,10 +160,10 @@ bool LoadVolume() {
 //mouse down event handler
 void OnMouseDown(int button, int s, int x, int y)
 {
-	if (s == GLUT_DOWN)
+	if(s == GLUT_DOWN)
 	{
-		oldX = x;
-		oldY = y;
+		oldX = 0.05*x;
+		oldY = 0.05*y;
 	}
 
 	if(button == GLUT_MIDDLE_BUTTON)
@@ -166,11 +178,14 @@ void OnMouseDown(int button, int s, int x, int y)
 //mouse move event handler
 void OnMouseMove(int x, int y)
 {
-	if (state == 0) {
-		dist += (y - oldY)/50.0f;
-	} else {
-		rX += (y - oldY)/5.0f;
-		rY += (x - oldX)/5.0f;
+	if(state == 0)
+	{
+		dist += (y - oldY) / 50.0f;
+	}
+	else
+	{
+		rX += (y - oldY) / 5.0f;
+		rY += (x - oldX) / 5.0f;
 		bViewRotated = true;
 	}
 	oldX = x;
@@ -180,15 +195,18 @@ void OnMouseMove(int x, int y)
 }
 
 //function to get the max (abs) dimension of the given vertex v
-int FindAbsMax(glm::vec3 v) {
+int FindAbsMax(glm::vec3 v)
+{
 	v = glm::abs(v);
 	int max_dim = 0;
 	float val = v.x;
-	if(v.y>val) {
+	if(v.y > val)
+	{
 		val = v.y;
 		max_dim = 1;
 	}
-	if(v.z > val) {
+	if(v.z > val)
+	{
 		val = v.z;
 		max_dim = 2;
 	}
@@ -196,7 +214,8 @@ int FindAbsMax(glm::vec3 v) {
 }
 
 //main slicing function
-void SliceVolume() {
+void SliceVolume()
+{
 
 	//get the max and min distance of each vertex of the unit cube
 	//in the viewing direction
@@ -205,19 +224,21 @@ void SliceVolume() {
 	int max_index = 0;
 	int count = 0;
 
-	for(int i=1;i<8;i++) {
+	for(int i = 1; i < 8; i++)
+	{
 		//get the distance between the current unit cube vertex and 
 		//the view vector by dot product
 		float dist = glm::dot(viewDir, vertexList[i]);
 
 		//if distance is > max_dist, store the value and index
-		if(dist > max_dist) {
+		if(dist > max_dist)
+		{
 			max_dist = dist;
 			max_index = i;
 		}
 
 		//if distance is < min_dist, store the value 
-		if(dist<min_dist)
+		if(dist < min_dist)
 			min_dist = dist;
 	}
 	//find tha abs maximum of the view direction vector
@@ -239,27 +260,44 @@ void SliceVolume() {
 	//subtract the max and min distances and divide by the 
 	//total number of slices to get the plane increment
 	float plane_dist = min_dist;
-	float plane_dist_inc = (max_dist-min_dist)/float(num_slices);
+	float plane_dist_inc = (max_dist - min_dist) / float(num_slices);
 
+	//Lambda（λ）的意义
+	// Lambda（λ）：在几何和图形学中，λ经常用作线性插值或参数方程的参数。在这里，λ用来表示从立方体边的一个端点（vecStart）到另一端的方向（vecDir）上的某一点的位置。
+	// 一个立方体的边可以表示为 P = vecStart + λ * vecDir，其中 0 ≤ λ ≤ 1。当 λ = 0 时，点 P 在 vecStart 处；当 λ = 1 时，点 P 在 vecStart + vecDir 处，即边的另一端。
+	//Lambda Increment（λ_inc）的意义
+	//	Lambda Increment（λ_inc）：这是λ的增量，用于从一个切片平面到下一个切片平面沿着边移动时λ的变化量。因为切片平面是沿着视图方向平行排列的，λ的增量用于计算每个平面与边的交点。
+	//1.计算初始 Lambda 值：
+	//	对于每条边，计算其与最接近相机的切片平面（最小距离平面）的交点的λ值。
+	//	这是通过求解 plane_dist = glm::dot(vecStart, viewDir) + λ * glm::dot(vecDir, viewDir) 来实现的。
+	// 
+	// 
+	// 
+	// 
+	// 
 	//for all edges
-	for(int i=0;i<12;i++) {
+	for(int i = 0; i < 12; i++)
+	{
 		//get the start position vertex by table lookup
 		vecStart[i] = vertexList[edges[edgeList[max_index][i]][0]];
 
 		//get the direction by table lookup
-		vecDir[i] = vertexList[edges[edgeList[max_index][i]][1]]-vecStart[i];
+		vecDir[i] = vertexList[edges[edgeList[max_index][i]][1]] - vecStart[i];
 
 		//do a dot of vecDir with the view direction vector
 		denom = glm::dot(vecDir[i], viewDir);
 
 		//determine the plane intersection parameter (lambda) and 
 		//plane intersection parameter increment (lambda_inc)
-		if (1.0 + denom != 1.0) {
-			lambda_inc[i] =  plane_dist_inc/denom;
-			lambda[i]     = (plane_dist - glm::dot(vecStart[i],viewDir))/denom;
-		} else {
-			lambda[i]     = -1.0;
-			lambda_inc[i] =  0.0;
+		if(1.0 + denom != 1.0)
+		{
+			lambda_inc[i] = plane_dist_inc / denom;
+			lambda[i] = (plane_dist - glm::dot(vecStart[i], viewDir)) / denom;
+		}
+		else
+		{
+			lambda[i] = -1.0;
+			lambda_inc[i] = 0.0;
 		}
 	}
 
@@ -270,103 +308,139 @@ void SliceVolume() {
 	float dL[12];
 
 	//loop through all slices
-	for(int i=num_slices-1;i>=0;i--) {
-		
+	for(int i = num_slices - 1; i >= 0; i--)
+	{
+		//for(int j = 0; j < 6; j++)
+		//{
+		//	intersection[j] = glm::vec3(0, 0, 0); // 或任何表示“无效”或“默认”的值
+		//}
+
 		//determine the lambda value for all edges
 		for(int e = 0; e < 12; e++)
 		{
-			dL[e] = lambda[e] + i*lambda_inc[e];
+			dL[e] = lambda[e] + i * lambda_inc[e];
 		}
 
 		//if the values are between 0-1, we have an intersection at the current edge
 		//repeat the same for all 12 edges
-		if  ((dL[0] >= 0.0) && (dL[0] < 1.0))	{
-			intersection[0] = vecStart[0] + dL[0]*vecDir[0];
+		if((dL[0] >= 0.0) && (dL[0] < 1.0))
+		{
+			intersection[0] = vecStart[0] + dL[0] * vecDir[0];
 		}
-		else if ((dL[1] >= 0.0) && (dL[1] < 1.0))	{
-			intersection[0] = vecStart[1] + dL[1]*vecDir[1];
+		else if((dL[1] >= 0.0) && (dL[1] < 1.0))
+		{
+			intersection[0] = vecStart[1] + dL[1] * vecDir[1];
 		}
-		else if ((dL[3] >= 0.0) && (dL[3] < 1.0))	{
-			intersection[0] = vecStart[3] + dL[3]*vecDir[3];
+		else if((dL[3] >= 0.0) && (dL[3] < 1.0))
+		{
+			intersection[0] = vecStart[3] + dL[3] * vecDir[3];
 		}
 		else continue;
 
-		if ((dL[2] >= 0.0) && (dL[2] < 1.0)){
-			intersection[1] = vecStart[2] + dL[2]*vecDir[2];
+		if((dL[2] >= 0.0) && (dL[2] < 1.0))
+		{
+			intersection[1] = vecStart[2] + dL[2] * vecDir[2];
 		}
-		else if ((dL[0] >= 0.0) && (dL[0] < 1.0)){
-			intersection[1] = vecStart[0] + dL[0]*vecDir[0];
+		else if((dL[0] >= 0.0) && (dL[0] < 1.0))
+		{
+			intersection[1] = vecStart[0] + dL[0] * vecDir[0];
 		}
-		else if ((dL[1] >= 0.0) && (dL[1] < 1.0)){
-			intersection[1] = vecStart[1] + dL[1]*vecDir[1];
-		} else {
-			intersection[1] = vecStart[3] + dL[3]*vecDir[3];
+		else if((dL[1] >= 0.0) && (dL[1] < 1.0))
+		{
+			intersection[1] = vecStart[1] + dL[1] * vecDir[1];
 		}
-
-		if  ((dL[4] >= 0.0) && (dL[4] < 1.0)){
-			intersection[2] = vecStart[4] + dL[4]*vecDir[4];
-		}
-		else if ((dL[5] >= 0.0) && (dL[5] < 1.0)){
-			intersection[2] = vecStart[5] + dL[5]*vecDir[5];
-		} else {
-			intersection[2] = vecStart[7] + dL[7]*vecDir[7];
-		}
-		if	((dL[6] >= 0.0) && (dL[6] < 1.0)){
-			intersection[3] = vecStart[6] + dL[6]*vecDir[6];
-		}
-		else if ((dL[4] >= 0.0) && (dL[4] < 1.0)){
-			intersection[3] = vecStart[4] + dL[4]*vecDir[4];
-		}
-		else if ((dL[5] >= 0.0) && (dL[5] < 1.0)){
-			intersection[3] = vecStart[5] + dL[5]*vecDir[5];
-		} else {
-			intersection[3] = vecStart[7] + dL[7]*vecDir[7];
-		}
-		if	((dL[8] >= 0.0) && (dL[8] < 1.0)){
-			intersection[4] = vecStart[8] + dL[8]*vecDir[8];
-		}
-		else if ((dL[9] >= 0.0) && (dL[9] < 1.0)){
-			intersection[4] = vecStart[9] + dL[9]*vecDir[9];
-		} else {
-			intersection[4] = vecStart[11] + dL[11]*vecDir[11];
+		else
+		{
+			intersection[1] = vecStart[3] + dL[3] * vecDir[3];
 		}
 
-		if ((dL[10]>= 0.0) && (dL[10]< 1.0)){
-			intersection[5] = vecStart[10] + dL[10]*vecDir[10];
+		if((dL[4] >= 0.0) && (dL[4] < 1.0))
+		{
+			intersection[2] = vecStart[4] + dL[4] * vecDir[4];
 		}
-		else if ((dL[8] >= 0.0) && (dL[8] < 1.0)){
-			intersection[5] = vecStart[8] + dL[8]*vecDir[8];
+		else if((dL[5] >= 0.0) && (dL[5] < 1.0))
+		{
+			intersection[2] = vecStart[5] + dL[5] * vecDir[5];
 		}
-		else if ((dL[9] >= 0.0) && (dL[9] < 1.0)){
-			intersection[5] = vecStart[9] + dL[9]*vecDir[9];
-		} else {
-			intersection[5] = vecStart[11] + dL[11]*vecDir[11];
+		else
+		{
+			intersection[2] = vecStart[7] + dL[7] * vecDir[7];
+		}
+		if((dL[6] >= 0.0) && (dL[6] < 1.0))
+		{
+			intersection[3] = vecStart[6] + dL[6] * vecDir[6];
+		}
+		else if((dL[4] >= 0.0) && (dL[4] < 1.0))
+		{
+			intersection[3] = vecStart[4] + dL[4] * vecDir[4];
+		}
+		else if((dL[5] >= 0.0) && (dL[5] < 1.0))
+		{
+			intersection[3] = vecStart[5] + dL[5] * vecDir[5];
+		}
+		else
+		{
+			intersection[3] = vecStart[7] + dL[7] * vecDir[7];
+		}
+		if((dL[8] >= 0.0) && (dL[8] < 1.0))
+		{
+			intersection[4] = vecStart[8] + dL[8] * vecDir[8];
+		}
+		else if((dL[9] >= 0.0) && (dL[9] < 1.0))
+		{
+			intersection[4] = vecStart[9] + dL[9] * vecDir[9];
+		}
+		else
+		{
+			intersection[4] = vecStart[11] + dL[11] * vecDir[11];
+		}
+
+		if((dL[10] >= 0.0) && (dL[10] < 1.0))
+		{
+			intersection[5] = vecStart[10] + dL[10] * vecDir[10];
+		}
+		else if((dL[8] >= 0.0) && (dL[8] < 1.0))
+		{
+			intersection[5] = vecStart[8] + dL[8] * vecDir[8];
+		}
+		else if((dL[9] >= 0.0) && (dL[9] < 1.0))
+		{
+			intersection[5] = vecStart[9] + dL[9] * vecDir[9];
+		}
+		else
+		{
+			intersection[5] = vecStart[11] + dL[11] * vecDir[11];
 		}
 
 		//after all 6 possible intersection vertices are obtained,
 		//we calculated the proper polygon indices by using indices of a triangular fan
-		int indices[]={0,1,2, 0,2,3, 0,3,4, 0,4,5};
+		int indices[] = {0,1,2, 0,2,3, 0,3,4, 0,4,5};
 
 		//Using the indices, pass the intersection vertices to the vTextureSlices vector
-		for(int i=0;i<12;i++)
-			vTextureSlices[count++]=intersection[indices[i]];
+		if(i == 90)
+		{
+			for(int k = 0; k < 12; k++)
+				vTextureSlices[count++] = intersection[indices[k]];
+			break;
+		}
 	}
 
 	//update buffer object with the new vertices
 	glBindBuffer(GL_ARRAY_BUFFER, volumeVBO);
-	glBufferSubData(GL_ARRAY_BUFFER, 0,  sizeof(vTextureSlices), &(vTextureSlices[0].x));
+	glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vTextureSlices), &(vTextureSlices[0].x));
 }
 
 //OpenGL initialization
-void OnInit() {
+void OnInit()
+{
 
-	GL_CHECK_ERRORS
+	GL_CHECK_ERRORS;
 
 	//create a uniform grid of size 20x20 in XZ plane
-	grid = new CGrid(20,20);
+	grid = new CGrid(20, 20);
 
-	GL_CHECK_ERRORS
-		 
+	GL_CHECK_ERRORS;
+
 	//Load the texture slicing shader
 	shader.LoadFromFile(GL_VERTEX_SHADER, "shaders/textureSlicer.vert");
 	shader.LoadFromFile(GL_FRAGMENT_SHADER, "shaders/textureSlicer.frag");
@@ -374,21 +448,24 @@ void OnInit() {
 	//compile and link the shader
 	shader.CreateAndLinkProgram();
 	shader.Use();
-		//add attributes and uniforms
-		shader.AddAttribute("vVertex");
-		shader.AddUniform("MVP");
-		shader.AddUniform("volume");
-		//pass constant uniforms at initialization
-		glUniform1i(shader("volume"),0);
+	//add attributes and uniforms
+	shader.AddAttribute("vVertex");
+	shader.AddUniform("MVP");
+	shader.AddUniform("volume");
+	//pass constant uniforms at initialization
+	glUniform1i(shader("volume"), 0);
 	shader.UnUse();
 
-	GL_CHECK_ERRORS
+	GL_CHECK_ERRORS;
 
 	//load volume data
-	if(LoadVolume()) {
-		std::cout<<"Volume data loaded successfully."<<std::endl;		
-	} else {
-		std::cout<<"Cannot load volume data."<<std::endl;
+	if(LoadVolume())
+	{
+		std::cout << "Volume data loaded successfully." << std::endl;
+	}
+	else
+	{
+		std::cout << "Cannot load volume data." << std::endl;
 		exit(EXIT_FAILURE);
 	}
 
@@ -396,39 +473,62 @@ void OnInit() {
 	glClearColor(bg.r, bg.g, bg.b, bg.a);
 
 	//setup the current camera transform and get the view direction vector
-	glm::mat4 T	= glm::translate(glm::mat4(1.0f),glm::vec3(0.0f, 0.0f, dist));
-	glm::mat4 Rx	= glm::rotate(T,  rX, glm::vec3(1.0f, 0.0f, 0.0f));
-	glm::mat4 MV    = glm::rotate(Rx, rY, glm::vec3(0.0f, 1.0f, 0.0f));
+	glm::mat4 T = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, -dist));
+	//glm::mat4 T = glm::translate(glm::mat4(1.0f), glm::vec3(5, 5, 5));
+	//glm::mat4 Rx = glm::rotate(T, rX, glm::vec3(1.0f, 0.0f, 0.0f));
+	//glm::mat4 MV = glm::rotate(Rx, rY, glm::vec3(0.0f, 0.0f, 1.0f));
+
+	//MV = T;
+	glm::mat4 MV = glm::lookAt(glm::vec3(50.0f, 50.0f, 50.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
 	//get the current view direction vector
 	viewDir = -glm::vec3(MV[0][2], MV[1][2], MV[2][2]);
+
+	glm::vec3 camPos = glm::vec3(glm::inverse(MV) * glm::vec4(0, 0, 0, 1));
 
 	//setup the vertex array and buffer objects
 	glGenVertexArrays(1, &volumeVAO);
 	glGenBuffers(1, &volumeVBO);
 
 	glBindVertexArray(volumeVAO);
-	glBindBuffer (GL_ARRAY_BUFFER, volumeVBO);
+	glBindBuffer(GL_ARRAY_BUFFER, volumeVBO);
 
 	//pass the sliced vertices vector to buffer object memory
-	glBufferData (GL_ARRAY_BUFFER, sizeof(vTextureSlices), 0, GL_DYNAMIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vTextureSlices), 0, GL_DYNAMIC_DRAW);
 
-	GL_CHECK_ERRORS
-	
+	GL_CHECK_ERRORS;
+
 	//enable vertex attribute array for position
 	glEnableVertexAttribArray(0);
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,0,0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
 	glBindVertexArray(0);
 
 	//slice the volume dataset initially
 	SliceVolume();
-	 
-	cout<<"Initialization successfull"<<endl;
+
+
+	glGenVertexArrays(1, &cubeVAO);
+	glGenBuffers(1, &cubeVBO);
+	glGenBuffers(1, &cubeEBO);
+
+	glBindVertexArray(cubeVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertexList), vertexList, GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cubeEBO);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(edges), edges, GL_STATIC_DRAW);
+
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(0);
+	glBindVertexArray(0);
+
+	cout << "Initialization successfull" << endl;
 }
 
 //release all allocated resources
-void OnShutdown() {
+void OnShutdown()
+{
 	shader.DeleteShaderProgram();
 
 	glDeleteVertexArrays(1, &volumeVAO);
@@ -436,36 +536,38 @@ void OnShutdown() {
 
 	glDeleteTextures(1, &textureID);
 	delete grid;
-	cout<<"Shutdown successfull"<<endl;
+	cout << "Shutdown successfull" << endl;
 }
 
 //resize event handler
-void OnResize(int w, int h) {
+void OnResize(int w, int h)
+{
 	//setup the viewport
-	glViewport (0, 0, (GLsizei) w, (GLsizei) h);
+	glViewport(0, 0, (GLsizei)w, (GLsizei)h);
 	//setup the projection matrix
-	P = glm::perspective(glm::radians(60.0f),(float)w/h, 0.1f,1000.0f);
+	P = glm::perspective(glm::radians(60.0f), (float)w / h, 0.1f, 1000.0f);
 }
 
 //display function
-void OnRender() {
-	GL_CHECK_ERRORS
+void OnRender()
+{
+	GL_CHECK_ERRORS;
 	//setup the camera transform
-	glm::mat4 Tr	= glm::translate(glm::mat4(1.0f),glm::vec3(0.0f, 0.0f, dist));
-	glm::mat4 Rx	= glm::rotate(Tr,  rX, glm::vec3(1.0f, 0.0f, 0.0f));
-	glm::mat4 MV    = glm::rotate(Rx, rY, glm::vec3(0.0f, 1.0f, 0.0f));
+	glm::mat4 Tr = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, dist));
+	glm::mat4 Rx = glm::rotate(Tr, rX, glm::vec3(1.0f, 0.0f, 0.0f));
+	glm::mat4 MV = glm::rotate(Rx, rY, glm::vec3(0.0f, 1.0f, 0.0f));
 
 	//get the viewing direction
 	viewDir = -glm::vec3(MV[0][2], MV[1][2], MV[2][2]);
 
 	//clear the colour and depth buffers
-	glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	//get the combined modelview projection matrix
-    glm::mat4 MVP	= P*MV;
+	glm::mat4 MVP = P * MV;
 
 	//render the grid object
-	grid->Render(glm::value_ptr(MVP));
+	//grid->Render(glm::value_ptr(MVP));
 
 	//if view is rotated, reslice the volume
 	if(bViewRotated)
@@ -476,17 +578,30 @@ void OnRender() {
 	//enable alpha blending (use over operator)
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	
+
 	//bind volume vertex array object
+	//glBindVertexArray(volumeVAO);
+	//use the volume shader
+	shader.Use();
+	//pass the shader uniform
+	glUniformMatrix4fv(shader("MVP"), 1, GL_FALSE, glm::value_ptr(MVP));
+
+	glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+	//draw the triangles
+	//glDrawArrays(GL_TRIANGLES, 0, sizeof(vTextureSlices) / sizeof(vTextureSlices[0]));
+	glBindVertexArray(cubeVAO);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,cubeEBO);
+	glDrawElements(GL_LINES, 24, GL_UNSIGNED_INT, 0);
+
 	glBindVertexArray(volumeVAO);
-		//use the volume shader
-		shader.Use();
-			//pass the shader uniform
-			glUniformMatrix4fv(shader("MVP"), 1, GL_FALSE, glm::value_ptr(MVP));
-				//draw the triangles
-				glDrawArrays(GL_TRIANGLES, 0, sizeof(vTextureSlices)/sizeof(vTextureSlices[0]));
-		//unbind the shader
-		shader.UnUse();
+	glDrawArrays(GL_TRIANGLES, 0, sizeof(vTextureSlices) / sizeof(vTextureSlices[0]));
+
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	glBindVertexArray(volumeVAO);
+	glDrawArrays(GL_TRIANGLES, 0, sizeof(vTextureSlices) / sizeof(vTextureSlices[0]));
+	// 
+	//unbind the shader
+	shader.UnUse();
 
 	//disable blending
 	glDisable(GL_BLEND);
@@ -496,18 +611,20 @@ void OnRender() {
 }
 
 //keyboard function to change the number of slices
-void OnKey(unsigned char key, int x, int y) {
-	switch(key) {
-		case '-':
-			num_slices--;
-			break;
+void OnKey(unsigned char key, int x, int y)
+{
+	switch(key)
+	{
+	case '-':
+		num_slices--;
+		break;
 
-		case '+':
-			num_slices++;
-			break;
+	case '+':
+		num_slices++;
+		break;
 	}
 	//check the range of num_slices variable
-	num_slices = min(MAX_SLICES, max(num_slices,3));
+	num_slices = min(MAX_SLICES, max(num_slices, 3));
 
 	//slice the volume
 	SliceVolume();
@@ -516,37 +633,41 @@ void OnKey(unsigned char key, int x, int y) {
 	glutPostRedisplay();
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
 	//freeglut initialization
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DEPTH | GLUT_DOUBLE | GLUT_RGBA);
-	glutInitContextVersion (3, 3);
-	glutInitContextFlags (GLUT_CORE_PROFILE | GLUT_DEBUG);
+	glutInitContextVersion(3, 3);
+	glutInitContextFlags(GLUT_CORE_PROFILE | GLUT_DEBUG);
 	glutInitWindowSize(WIDTH, HEIGHT);
 	glutCreateWindow("Volume Rendering using 3D Texture Slicing - OpenGL 3.3");
-	
+
 	//glew initialization
 	glewExperimental = GL_TRUE;
 	GLenum err = glewInit();
-	if (GLEW_OK != err)	{
-		cerr<<"Error: "<<glewGetErrorString(err)<<endl;
-	} else {
-		if (GLEW_VERSION_3_3)
+	if(GLEW_OK != err)
+	{
+		cerr << "Error: " << glewGetErrorString(err) << endl;
+	}
+	else
+	{
+		if(GLEW_VERSION_3_3)
 		{
-			cout<<"Driver supports OpenGL 3.3\nDetails:"<<endl;
+			cout << "Driver supports OpenGL 3.3\nDetails:" << endl;
 		}
 	}
 	err = glGetError(); //this is to ignore INVALID ENUM error 1282
-	GL_CHECK_ERRORS
+	GL_CHECK_ERRORS;
 
 	//output hardware information
-	cout<<"\tUsing GLEW "<<glewGetString(GLEW_VERSION)<<endl;
-	cout<<"\tVendor: "<<glGetString (GL_VENDOR)<<endl;
-	cout<<"\tRenderer: "<<glGetString (GL_RENDERER)<<endl;
-	cout<<"\tVersion: "<<glGetString (GL_VERSION)<<endl;
-	cout<<"\tGLSL: "<<glGetString (GL_SHADING_LANGUAGE_VERSION)<<endl;
+	cout << "\tUsing GLEW " << glewGetString(GLEW_VERSION) << endl;
+	cout << "\tVendor: " << glGetString(GL_VENDOR) << endl;
+	cout << "\tRenderer: " << glGetString(GL_RENDERER) << endl;
+	cout << "\tVersion: " << glGetString(GL_VERSION) << endl;
+	cout << "\tGLSL: " << glGetString(GL_SHADING_LANGUAGE_VERSION) << endl;
 
-	GL_CHECK_ERRORS
+	GL_CHECK_ERRORS;
 
 	//OpenGL initialization
 	OnInit();

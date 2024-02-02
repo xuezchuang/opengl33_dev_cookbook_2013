@@ -28,4 +28,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\shader.vert">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\textureSlicer.frag">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\textureSlicer.vert">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\shader.frag">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
 </Project>

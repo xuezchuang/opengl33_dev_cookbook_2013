@@ -25,4 +25,27 @@
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\quad_shader.frag">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\quad_shader.vert">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\splatShader.frag">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\splatShader.vert">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\GaussH.frag">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\GaussV.frag">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\Passthrough.vert">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
 </Project>

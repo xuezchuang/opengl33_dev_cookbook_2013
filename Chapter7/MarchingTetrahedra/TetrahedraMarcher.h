@@ -1,6 +1,6 @@
 #pragma once
 #include <GL/freeglut.h>
-#include <string.h>
+#include <xstring>
 #include <glm/glm.hpp>
 #include <vector>
 
